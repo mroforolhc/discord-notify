@@ -6,6 +6,7 @@ import { startTelegramBot } from "./telegram.js";
 const discordBot = await startDiscordBot(
   config.discordToken,
   config.voiceDebounceMs,
+  config.inviteMaxAgeSeconds,
 );
 
 const telegramBot = await startTelegramBot(
