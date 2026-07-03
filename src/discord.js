@@ -37,7 +37,7 @@ export async function startDiscordBot(token, debounceMs = 15000) {
 
   function describeTransition(member, beforeChannel, afterChannel, inviteUrl) {
     if (!beforeChannel && afterChannel) {
-      const invitePart = inviteUrl ? `\n\n${inviteUrl}` : "";
+      const invitePart = inviteUrl ? `\n\n${inviteUrl} (мяу мяу мяу)` : "";
       return `${member.displayName} зашёл в ${afterChannel.name}${invitePart}`;
     } else if (beforeChannel && !afterChannel) {
       return `${member.displayName} вышел из ${beforeChannel.name}`;
