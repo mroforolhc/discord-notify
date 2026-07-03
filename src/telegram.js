@@ -48,9 +48,19 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
 
   async function sendMessage(text) {
     try {
-      await bot.api.sendMessage(chatId, text);
+      return await bot.api.sendMessage(chatId, text);
     } catch (error) {
       console.error("Ошибка отправки в Telegram:", error);
+      return null;
+    }
+  }
+
+  async function editMessage(messageId, text) {
+    try {
+      return await bot.api.editMessageText(chatId, messageId, text);
+    } catch (error) {
+      console.error("Ошибка редактирования сообщения в Telegram:", error);
+      return null;
     }
   }
 
@@ -63,5 +73,5 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
     }
   }
 
-  return { emitter, sendMessage, stop };
+  return { emitter, sendMessage, editMessage, stop };
 }
