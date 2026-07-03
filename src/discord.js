@@ -1,7 +1,7 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { EventEmitter } from "node:events";
 
-export async function startDiscordBot(token, debounceMs = 15000) {
+export async function startDiscordBot(token) {
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -11,7 +11,6 @@ export async function startDiscordBot(token, debounceMs = 15000) {
   });
 
   const emitter = new EventEmitter();
-  const pending = new Map();
   const inviteLinks = new Map();
 
   async function ensureInviteLink(guild) {
@@ -35,16 +34,6 @@ export async function startDiscordBot(token, debounceMs = 15000) {
     }
   }
 
-  function describeTransition(member, beforeChannel, afterChannel, inviteUrl) {
-    if (!beforeChannel && afterChannel) {
-      const invitePart = inviteUrl ? `\n\n${inviteUrl} (мяу мяу мяу)` : "";
-      return `${member.displayName} зашёл в ${afterChannel.name}${invitePart}`;
-    } else if (beforeChannel && !afterChannel) {
-      return `${member.displayName} вышел из ${beforeChannel.name}`;
-    }
-    return null;
-  }
-
   client.once("clientReady", async () => {
     console.log(`Discord: Бот запущен как ${client.user.tag}`);
     for (const guild of client.guilds.cache.values()) {
@@ -52,34 +41,29 @@ export async function startDiscordBot(token, debounceMs = 15000) {
     }
   });
 
-  client.on("voiceStateUpdate", (oldState, newState) => {
+  client.on("voiceStateUpdate", async (oldState, newState) => {
     const member = newState.member || oldState.member;
-    const existing = pending.get(member.id);
+    const beforeChannel = oldState.channel;
+    const afterChannel = newState.channel;
 
-    const beforeChannel = existing ? existing.beforeChannel : oldState.channel;
-
-    if (existing) clearTimeout(existing.timer);
-
-    const timer = setTimeout(async () => {
-      pending.delete(member.id);
-
-      const afterChannel = member.voice.channel ?? null;
-      const inviteUrl = afterChannel
-        ? await ensureInviteLink(member.guild)
-        : null;
-      const message = describeTransition(
-        member,
-        beforeChannel,
-        afterChannel,
-        inviteUrl,
-      );
-
-      if (message) {
-        emitter.emit("voiceEvent", message);
-      }
-    }, debounceMs);
-
-    pending.set(member.id, { beforeChannel, timer });
+    if (!beforeChannel && afterChannel) {
+      emitter.emit("voiceEvent", {
+        type: "join",
+        memberId: member.id,
+        memberName: member.displayName,
+        channelId: afterChannel.id,
+        channelName: afterChannel.name,
+        inviteUrl: await ensureInviteLink(member.guild),
+      });
+    } else if (beforeChannel && !afterChannel) {
+      emitter.emit("voiceEvent", {
+        type: "leave",
+        memberId: member.id,
+        memberName: member.displayName,
+        channelId: beforeChannel.id,
+        channelName: beforeChannel.name,
+      });
+    }
   });
 
   function getVoiceStatus() {
