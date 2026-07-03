@@ -1,0 +1,12 @@
+services:
+  discord-notify:
+    build: .
+    container_name: discord-notify
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - discord-notify
+
+networks:
+  discord-notify:
+    name: discord-notify
