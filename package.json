@@ -1,4 +1,14 @@
 {
   "name": "discord-notify",
-  "packageManager": "yarn@4.17.0"
+  "type": "module",
+  "packageManager": "yarn@4.17.0",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.26.4",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "grammy": "^1.44.0"
+  }
 }
