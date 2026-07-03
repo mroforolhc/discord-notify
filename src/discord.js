@@ -20,7 +20,7 @@ export async function startDiscordBot(
 
   async function ensureInviteLink(channel) {
     const cached = inviteLinks.get(channel.id);
-    if (cached && (cached.expiresAt === null || cached.expiresAt > Date.now())) {
+    if (cached && cached.expiresAt > Date.now()) {
       return cached.url;
     }
 
@@ -37,10 +37,7 @@ export async function startDiscordBot(
       });
       inviteLinks.set(channel.id, {
         url: invite.url,
-        expiresAt:
-          inviteMaxAgeSeconds > 0
-            ? Date.now() + inviteMaxAgeSeconds * 1000
-            : null,
+        expiresAt: Date.now() + inviteMaxAgeSeconds * 1000,
       });
       return invite.url;
     } catch (error) {
