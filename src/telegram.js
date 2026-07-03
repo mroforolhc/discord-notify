@@ -8,14 +8,12 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
   const bot = new Bot(botToken);
   const emitter = new EventEmitter();
 
-  bot.on("message:text").filter(
-    (ctx) =>
-      ctx.message.text.startsWith("/") &&
-      String(ctx.chat.id) === String(chatId),
-    (ctx) => {
-      emitter.emit("command", ctx.message.text.split(" ")[0], ctx);
-    },
-  );
+  bot.on("message:text", (ctx) => {
+    if (!ctx.message.text.startsWith("/")) return;
+
+    const command = ctx.message.text.split(" ")[0].split("@")[0];
+    emitter.emit("command", command, ctx);
+  });
 
   bot.catch(({ error }) => {
     console.error("Ошибка Telegram-бота:", error);
