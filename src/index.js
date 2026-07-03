@@ -3,7 +3,10 @@ import { config } from "./config.js";
 import { startDiscordBot } from "./discord.js";
 import { startTelegramBot } from "./telegram.js";
 
-const discordBot = await startDiscordBot(config.discordToken);
+const discordBot = await startDiscordBot(
+  config.discordToken,
+  config.inviteMaxAgeSeconds,
+);
 
 const telegramBot = await startTelegramBot(
   config.telegramBotToken,

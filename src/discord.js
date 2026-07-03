@@ -1,7 +1,10 @@
 import { Client, GatewayIntentBits } from "discord.js";
 import { EventEmitter } from "node:events";
 
-export async function startDiscordBot(token) {
+export async function startDiscordBot(
+  token,
+  inviteMaxAgeSeconds = 21600,
+) {
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -13,20 +16,27 @@ export async function startDiscordBot(token) {
   const emitter = new EventEmitter();
   const inviteLinks = new Map();
 
-  async function ensureInviteLink(guild) {
-    if (inviteLinks.has(guild.id)) return inviteLinks.get(guild.id);
+  async function ensureInviteLink(channel) {
+    const cached = inviteLinks.get(channel.id);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.url;
+    }
 
-    const channel = guild.channels.cache.find(
-      (c) =>
-        (c.isTextBased() || c.isVoiceBased()) &&
-        c.permissionsFor(guild.members.me)?.has("CreateInstantInvite"),
-    );
-
-    if (!channel) return null;
+    if (
+      !channel.permissionsFor(channel.guild.members.me)?.has("CreateInstantInvite")
+    ) {
+      return null;
+    }
 
     try {
-      const invite = await channel.createInvite({ maxAge: 0, unique: false });
-      inviteLinks.set(guild.id, invite.url);
+      const invite = await channel.createInvite({
+        maxAge: inviteMaxAgeSeconds,
+        unique: false,
+      });
+      inviteLinks.set(channel.id, {
+        url: invite.url,
+        expiresAt: Date.now() + inviteMaxAgeSeconds * 1000,
+      });
       return invite.url;
     } catch (error) {
       console.error("Discord: не удалось создать инвайт:", error);
@@ -34,11 +44,8 @@ export async function startDiscordBot(token) {
     }
   }
 
-  client.once("clientReady", async () => {
+  client.once("clientReady", () => {
     console.log(`Discord: Бот запущен как ${client.user.tag}`);
-    for (const guild of client.guilds.cache.values()) {
-      await ensureInviteLink(guild);
-    }
   });
 
   client.on("voiceStateUpdate", async (oldState, newState) => {
@@ -53,7 +60,7 @@ export async function startDiscordBot(token) {
         memberName: member.displayName,
         channelId: afterChannel.id,
         channelName: afterChannel.name,
-        inviteUrl: await ensureInviteLink(member.guild),
+        inviteUrl: await ensureInviteLink(afterChannel),
       });
     } else if (beforeChannel && !afterChannel) {
       emitter.emit("voiceEvent", {
