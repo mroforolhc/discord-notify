@@ -1,0 +1,15 @@
+services:
+  discord-notify:
+    build: .
+    container_name: discord-notify
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "8080"
+    networks:
+      - default
+      - proxy
+
+networks:
+  proxy:
+    external: true
