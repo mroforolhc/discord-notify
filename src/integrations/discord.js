@@ -77,6 +77,18 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
         memberId: member.id,
         memberName: member.displayName,
       });
+    } else if (
+      beforeChannel &&
+      afterChannel &&
+      beforeChannel.id !== afterChannel.id
+    ) {
+      // Переход между каналами (drag): join/leave не срабатывают, но сводка
+      // «сейчас в каналах» изменилась. Совпадение id = мьют/глушение — игнорим.
+      emitter.emit("voiceEvent", {
+        type: "move",
+        memberId: member.id,
+        memberName: member.displayName,
+      });
     }
   });
 

@@ -45,6 +45,17 @@ export async function registerVoiceNotify({ telegram, config }) {
   function handleEvent(event) {
     const now = Date.now();
 
+    if (event.type === "move") {
+      // Переход между каналами: не логируем и не создаём новое сообщение.
+      // Но если есть живое сообщение — обновляем в нём сводку «сейчас в каналах»
+      // (перешедший появится в другом канале). Нет сообщения — move ничего не делает.
+      if (session && now - session.lastEventAt <= config.voiceSessionIdleMs) {
+        session.lastEventAt = now;
+        requestFlush();
+      }
+      return;
+    }
+
     if (session && now - session.lastEventAt > config.voiceSessionIdleMs) {
       session = null;
     }
