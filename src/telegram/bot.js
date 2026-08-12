@@ -9,6 +9,8 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
   const emitter = new EventEmitter();
 
   bot.on("message:text", (ctx) => {
+    emitter.emit("message", ctx);
+
     if (!ctx.message.text.startsWith("/")) return;
 
     const command = ctx.message.text.split(" ")[0].split("@")[0];
