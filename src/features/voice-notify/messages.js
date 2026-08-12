@@ -5,84 +5,100 @@ export function escapeHtml(text) {
     .replaceAll(">", "&gt;");
 }
 
-export function formatTime(ts, timezone) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(ts);
-}
-
-export function formatDateTime(ts, timezone) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: timezone,
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(ts);
-}
-
 const NO_CHANNELS = "Все голосовые каналы пусты";
 
 function channelLines(channels) {
   return channels.map(
-    (c) => `${escapeHtml(c.channelName)}: ${c.members.map(escapeHtml).join(", ")}`,
+    (c) =>
+      `${escapeHtml(c.channelName)}: ${c.members
+        .map((m) => escapeHtml(m.name))
+        .join(", ")}`,
   );
 }
 
+// HTML-текст для команды /status (отправлять с parse_mode: HTML).
 export function renderVoiceStatus(channels) {
   if (channels.length === 0) return NO_CHANNELS;
   return channelLines(channels).join("\n");
 }
 
-function visitLines(visit) {
-  const name = escapeHtml(visit.memberName);
-  const lines = [];
-  if (visit.joinAt != null) {
-    lines.push({ text: `${name} зашёл в Discord`, at: visit.joinAt });
-  }
-  if (visit.leaveAt != null) {
-    lines.push({ text: `${name} вышел из Discord`, at: visit.leaveAt });
-  }
-  return lines;
+// «A» / «A и B» / «A, B и C». Имена экранируются.
+// TODO: сюда же можно повесить склонение по мапе ников.
+function namesList(names) {
+  const escaped = names.map(escapeHtml);
+  if (escaped.length <= 1) return escaped.join("");
+  return `${escaped.slice(0, -1).join(", ")} и ${escaped.at(-1)}`;
 }
 
-export function renderSessionMessage({
-  visits,
-  channels,
+// Правильное «раз/раза/раз» для числа.
+function razWord(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "раз";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "раза";
+  return "раз";
+}
+
+function ch(name) {
+  return `«${escapeHtml(name)}»`;
+}
+
+// Клауза про зашедших и оставшихся в канале.
+function joinersClause(joiners, others, channelName) {
+  const verb = joiners.length === 1 ? "зашёл" : "зашли";
+  if (others.length > 0) {
+    return `${namesList(joiners)} ${verb} к ${namesList(others)}`;
+  }
+  if (joiners.length === 1) {
+    return `${namesList(joiners)} зашёл в ${ch(channelName)}, сидит один`;
+  }
+  return `${namesList(joiners)} зашли в ${ch(channelName)}`;
+}
+
+function leaversClause(leavers, channelName) {
+  const verb = leavers.length === 1 ? "вышел" : "вышли";
+  return `${namesList(leavers)} ${verb} из ${ch(channelName)}`;
+}
+
+// Клауза про «поскакавшего» одного человека.
+function bouncerClause(bouncer, others, channelName) {
+  const name = escapeHtml(bouncer.name);
+  const { leaves, netIn } = bouncer;
+
+  if (netIn) {
+    const back =
+      others.length > 0
+        ? `к ${namesList(others)}`
+        : `в ${ch(channelName)}`;
+    return `${name} зашёл и вышел ${leaves} ${razWord(leaves)} и снова зашёл ${back}`;
+  }
+  if (leaves === 1) {
+    return others.length > 0
+      ? `${name} зашёл к ${namesList(others)} и вышел`
+      : `${name} заглянул в ${ch(channelName)} и вышел`;
+  }
+  return `${name} зашёл и вышел ${leaves} ${razWord(leaves)}`;
+}
+
+// Собирает одно контекстное сообщение по бёрсту канала.
+// joiners/leavers — массивы имён; bouncers — [{ name, leaves, netIn }];
+// others — имена присутствующих, не участвующих в бёрсте.
+export function renderChannelBurst({
+  channelName,
+  joiners,
+  leavers,
+  bouncers,
+  others,
   inviteUrl,
-  timezone,
-  edited,
-  updatedAt,
 }) {
-  const logLines = visits.flatMap(visitLines).sort((a, b) => a.at - b.at);
-  const showTimes = logLines.length > 1;
+  const clauses = [];
+  if (joiners.length > 0) clauses.push(joinersClause(joiners, others, channelName));
+  if (leavers.length > 0) clauses.push(leaversClause(leavers, channelName));
+  for (const b of bouncers) clauses.push(bouncerClause(b, others, channelName));
 
-  const parts = [];
-
-  for (const line of logLines) {
-    parts.push(
-      showTimes ? `${line.text} · ${formatTime(line.at, timezone)}` : line.text,
-    );
-  }
-
-  parts.push("");
-  if (channels.length > 0) {
-    const stamp =
-      edited && updatedAt != null
-        ? ` · обновлено ${formatDateTime(updatedAt, timezone)}`
-        : "";
-    parts.push(`<b>Сейчас в каналах</b>${stamp}`);
-    parts.push(...channelLines(channels));
-  } else {
-    parts.push(NO_CHANNELS);
-  }
-
-  if (inviteUrl) {
-    parts.push("");
-    parts.push(`<a href="${escapeHtml(inviteUrl)}">Зайти в Discord</a> (мяу мяу мяу)`);
-  }
-
-  return parts.join("\n");
+  const text = clauses.join("; ");
+  const prefix = inviteUrl
+    ? `<a href="${escapeHtml(inviteUrl)}">Discord</a>: `
+    : "";
+  return `${prefix}${text}`;
 }

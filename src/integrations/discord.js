@@ -70,12 +70,16 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
         type: "join",
         memberId: member.id,
         memberName: member.displayName,
+        channelId: afterChannel.id,
+        channelName: afterChannel.name,
       });
     } else if (beforeChannel && !afterChannel) {
       emitter.emit("voiceEvent", {
         type: "leave",
         memberId: member.id,
         memberName: member.displayName,
+        channelId: beforeChannel.id,
+        channelName: beforeChannel.name,
       });
     }
   });
@@ -88,7 +92,10 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
           result.push({
             channelId: channel.id,
             channelName: channel.name,
-            members: [...channel.members.values()].map((m) => m.displayName),
+            members: [...channel.members.values()].map((m) => ({
+              id: m.id,
+              name: m.displayName,
+            })),
           });
         }
       }
