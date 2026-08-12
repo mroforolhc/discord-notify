@@ -43,6 +43,21 @@ function ch(name) {
   return `«${escapeHtml(name)}»`;
 }
 
+// Префикс-ссылка «Discord» + текст.
+function withInvite(inviteUrl, text) {
+  const prefix = inviteUrl
+    ? `<a href="${escapeHtml(inviteUrl)}">Discord</a>: `
+    : "";
+  return `${prefix}${text}`;
+}
+
+// «к A и B» либо «в «Канал», сидит один» — куда пришёл / где сейчас.
+function destPart(others, toChannelName) {
+  return others.length > 0
+    ? `к ${namesList(others)}`
+    : `в ${ch(toChannelName)}, сидит один`;
+}
+
 // Клауза про зашедших и оставшихся в канале.
 function joinersClause(joiners, others, channelName) {
   const verb = joiners.length === 1 ? "зашёл" : "зашли";
@@ -96,9 +111,28 @@ export function renderChannelBurst({
   if (leavers.length > 0) clauses.push(leaversClause(leavers, channelName));
   for (const b of bouncers) clauses.push(bouncerClause(b, others, channelName));
 
-  const text = clauses.join("; ");
-  const prefix = inviteUrl
-    ? `<a href="${escapeHtml(inviteUrl)}">Discord</a>: `
-    : "";
-  return `${prefix}${text}`;
+  return withInvite(inviteUrl, clauses.join("; "));
+}
+
+// Переход между каналами. fromRemain — кто остался в исходном канале;
+// others — кто уже в целевом (без самого переходящего).
+export function renderMove({
+  name,
+  moveCount,
+  fromChannelName,
+  fromRemain,
+  toChannelName,
+  others,
+  inviteUrl,
+}) {
+  const dest = destPart(others, toChannelName);
+  let text;
+  if (moveCount <= 1) {
+    const src =
+      fromRemain.length > 0 ? `сидел с ${namesList(fromRemain)}` : "был один";
+    text = `${escapeHtml(name)} перешёл из ${ch(fromChannelName)} (${src}) ${dest}`;
+  } else {
+    text = `${escapeHtml(name)} мечется по каналам, остановился ${dest}`;
+  }
+  return withInvite(inviteUrl, text);
 }
