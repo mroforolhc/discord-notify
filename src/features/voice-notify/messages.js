@@ -25,20 +25,17 @@ export function formatDateTime(ts, timezone) {
 
 const NO_CHANNELS = "Все голосовые каналы пусты";
 
-// Строки сводки «канал: участники» (HTML, имена экранированы).
 function channelLines(channels) {
   return channels.map(
     (c) => `${escapeHtml(c.channelName)}: ${c.members.map(escapeHtml).join(", ")}`,
   );
 }
 
-// HTML-текст для команды /status (отправлять с parse_mode: HTML).
 export function renderVoiceStatus(channels) {
   if (channels.length === 0) return NO_CHANNELS;
   return channelLines(channels).join("\n");
 }
 
-// Разворачивает визит в 1-2 строки лога (заход и опциональный выход).
 function visitLines(visit) {
   const name = escapeHtml(visit.memberName);
   const lines = [];
@@ -84,7 +81,7 @@ export function renderSessionMessage({
 
   if (inviteUrl) {
     parts.push("");
-    parts.push(`<a href="${escapeHtml(inviteUrl)}">Зайти в Discord</a>`);
+    parts.push(`<a href="${escapeHtml(inviteUrl)}">Зайти в Discord</a> (мяу мяу мяу)`);
   }
 
   return parts.join("\n");
