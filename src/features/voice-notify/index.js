@@ -67,10 +67,18 @@ export async function registerVoiceNotify({ telegram, config }) {
     }
 
     if (isJoin) {
-      v.leaveAt = null;
-      if (v.joinAt == null) v.joinAt = now;
+      if (v.leaveAt != null && v.joinAt != null && v.leaveAt > v.joinAt) {
+        v.leaveAt = null;
+      } else if (v.joinAt == null) {
+        v.joinAt = now;
+      }
     } else {
-      v.leaveAt = now;
+      if (v.joinAt != null && v.leaveAt != null && v.joinAt > v.leaveAt) {
+        v.joinAt = null;
+        v.leaveAt = now;
+      } else if (v.leaveAt == null) {
+        v.leaveAt = now;
+      }
     }
     v.memberName = event.memberName;
     v.lastEventAt = now;

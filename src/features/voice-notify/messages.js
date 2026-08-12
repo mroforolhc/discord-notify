@@ -59,7 +59,7 @@ export function renderSessionMessage({
   const logLines = visits.flatMap(visitLines).sort((a, b) => a.at - b.at);
   const showTimes = logLines.length > 1;
 
-  const parts = ["🔊 <b>Голосовые каналы</b>", ""];
+  const parts = [];
 
   for (const line of logLines) {
     parts.push(
