@@ -12,8 +12,9 @@ export async function registerVoiceNotify({ telegram, config }) {
     config.inviteMaxAgeSeconds,
   );
 
-  // Одна живая сессия-сводка: { messageId, visits: Visit[] }.
+  // Одна живая сессия-сводка: { messageId, visits: Visit[], interrupted }.
   // Visit = { memberId, memberName, joinAt, leaveAt, lastEventAt }.
+  // interrupted = кто-то написал в чат после нашего сообщения (мы больше не последние).
   let session = null;
 
   // Сериализация + троттлинг правок Telegram.
@@ -32,7 +33,7 @@ export async function registerVoiceNotify({ telegram, config }) {
   }
 
   function lineCount(v) {
-    return (v.joinAt != null ? 1 : 0) + (v.leaveAt != null ? 1 : 0);
+    return v.joinAt != null || v.leaveAt != null ? 1 : 0;
   }
 
   function trim() {
@@ -56,11 +57,22 @@ export async function registerVoiceNotify({ telegram, config }) {
       return;
     }
 
-    if (session && now - session.lastEventAt > config.voiceSessionIdleMs) {
+    // Новое сообщение создаём, только если пауза прошла И нас уже перебили в чате.
+    // Пока наше сообщение остаётся последним — продолжаем редактировать его.
+    if (
+      session &&
+      now - session.lastEventAt > config.voiceSessionIdleMs &&
+      session.interrupted
+    ) {
       session = null;
     }
     if (!session) {
-      session = { messageId: null, visits: [], lastEventAt: now };
+      session = {
+        messageId: null,
+        visits: [],
+        lastEventAt: now,
+        interrupted: false,
+      };
     }
 
     const isJoin = event.type === "join";
@@ -124,9 +136,6 @@ export async function registerVoiceNotify({ telegram, config }) {
       visits: session.visits,
       channels: discord.getVoiceChannels(),
       inviteUrl: await discord.getInviteUrl(),
-      timezone: config.voiceTimezone,
-      edited: session.messageId != null,
-      updatedAt: Date.now(),
     });
 
     if (session.messageId == null) {
@@ -138,6 +147,15 @@ export async function registerVoiceNotify({ telegram, config }) {
   }
 
   discord.emitter.on("voiceEvent", handleEvent);
+
+  // Любое чужое сообщение в нашем чате после нашей сводки — значит нас «перебили».
+  telegram.emitter.on("message", (ctx) => {
+    if (String(ctx.chat.id) !== String(config.telegramChatId)) return;
+    if (!session || session.messageId == null) return;
+    if (ctx.message.message_id > session.messageId) {
+      session.interrupted = true;
+    }
+  });
 
   telegram.emitter.on("command", (command) => {
     if (command === "/status") {

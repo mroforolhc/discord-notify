@@ -10,12 +10,13 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
   bot.api.config.use(autoRetry());
   const emitter = new EventEmitter();
 
-  bot.on("message:text", (ctx) => {
+  bot.on("message", (ctx) => {
     emitter.emit("message", ctx);
 
-    if (!ctx.message.text.startsWith("/")) return;
+    const text = ctx.message.text;
+    if (!text || !text.startsWith("/")) return;
 
-    const command = ctx.message.text.split(" ")[0].split("@")[0];
+    const command = text.split(" ")[0].split("@")[0];
     emitter.emit("command", command, ctx);
   });
 

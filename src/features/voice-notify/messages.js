@@ -5,29 +5,12 @@ export function escapeHtml(text) {
     .replaceAll(">", "&gt;");
 }
 
-export function formatTime(ts, timezone) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(ts);
-}
-
-export function formatDateTime(ts, timezone) {
-  return new Intl.DateTimeFormat("ru-RU", {
-    timeZone: timezone,
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(ts);
-}
-
 const NO_CHANNELS = "Все голосовые каналы пусты";
 
 function channelLines(channels) {
   return channels.map(
-    (c) => `${escapeHtml(c.channelName)}: ${c.members.map(escapeHtml).join(", ")}`,
+    (c) =>
+      `<b>${escapeHtml(c.channelName)}</b>: ${c.members.map(escapeHtml).join(", ")}`,
   );
 }
 
@@ -38,50 +21,40 @@ export function renderVoiceStatus(channels) {
 
 function visitLines(visit) {
   const name = escapeHtml(visit.memberName);
-  const lines = [];
+
+  // Оба события за одну сессию — склеиваем в одну фразу по их порядку.
+  if (visit.joinAt != null && visit.leaveAt != null) {
+    const text =
+      visit.joinAt <= visit.leaveAt
+        ? `${name} зашёл и вышел из Discord`
+        : `${name} вышел и зашёл в Discord`;
+    return [{ text, at: Math.max(visit.joinAt, visit.leaveAt) }];
+  }
+
   if (visit.joinAt != null) {
-    lines.push({ text: `${name} зашёл в Discord`, at: visit.joinAt });
+    return [{ text: `${name} зашёл в Discord`, at: visit.joinAt }];
   }
   if (visit.leaveAt != null) {
-    lines.push({ text: `${name} вышел из Discord`, at: visit.leaveAt });
+    return [{ text: `${name} вышел из Discord`, at: visit.leaveAt }];
   }
-  return lines;
+  return [];
 }
 
-export function renderSessionMessage({
-  visits,
-  channels,
-  inviteUrl,
-  timezone,
-  edited,
-  updatedAt,
-}) {
+export function renderSessionMessage({ visits, channels, inviteUrl }) {
   const logLines = visits.flatMap(visitLines).sort((a, b) => a.at - b.at);
-  const showTimes = logLines.length > 1;
 
-  const parts = [];
+  const parts = logLines.map((line) => line.text);
 
-  for (const line of logLines) {
-    parts.push(
-      showTimes ? `${line.text} · ${formatTime(line.at, timezone)}` : line.text,
-    );
-  }
-
-  parts.push("");
   if (channels.length > 0) {
-    const stamp =
-      edited && updatedAt != null
-        ? ` · обновлено ${formatDateTime(updatedAt, timezone)}`
-        : "";
-    parts.push(`<b>Сейчас в каналах</b>${stamp}`);
-    parts.push(...channelLines(channels));
-  } else {
-    parts.push(NO_CHANNELS);
-  }
-
-  if (inviteUrl) {
     parts.push("");
-    parts.push(`<a href="${escapeHtml(inviteUrl)}">Зайти в Discord</a> (мяу мяу мяу)`);
+    parts.push(...channelLines(channels));
+
+    if (inviteUrl) {
+      parts.push("");
+      parts.push(
+        `<a href="${escapeHtml(inviteUrl)}">Зайти в Discord</a> (мяу мяу мяу)`,
+      );
+    }
   }
 
   return parts.join("\n");
