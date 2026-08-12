@@ -8,14 +8,12 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
   const bot = new Bot(botToken);
   const emitter = new EventEmitter();
 
-  bot.on("message:text").filter(
-    (ctx) =>
-      ctx.message.text.startsWith("/") &&
-      String(ctx.chat.id) === String(chatId),
-    (ctx) => {
-      emitter.emit("command", ctx.message.text.split(" ")[0], ctx);
-    },
-  );
+  bot.on("message:text", (ctx) => {
+    if (!ctx.message.text.startsWith("/")) return;
+
+    const command = ctx.message.text.split(" ")[0].split("@")[0];
+    emitter.emit("command", command, ctx);
+  });
 
   bot.catch(({ error }) => {
     console.error("Ошибка Telegram-бота:", error);
@@ -50,9 +48,19 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
 
   async function sendMessage(text) {
     try {
-      await bot.api.sendMessage(chatId, text);
+      return await bot.api.sendMessage(chatId, text);
     } catch (error) {
       console.error("Ошибка отправки в Telegram:", error);
+      return null;
+    }
+  }
+
+  async function editMessage(messageId, text) {
+    try {
+      return await bot.api.editMessageText(chatId, messageId, text);
+    } catch (error) {
+      console.error("Ошибка редактирования сообщения в Telegram:", error);
+      return null;
     }
   }
 
@@ -65,5 +73,5 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
     }
   }
 
-  return { emitter, sendMessage, stop };
+  return { emitter, sendMessage, editMessage, stop };
 }
