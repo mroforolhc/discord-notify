@@ -1,4 +1,5 @@
 import { Bot, webhookCallback } from "grammy";
+import { autoRetry } from "@grammyjs/auto-retry";
 import { EventEmitter } from "node:events";
 import express from "express";
 
@@ -6,6 +7,7 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
   const { mode = "polling", webhookUrl, webhookSecret, port = 8080 } = options;
 
   const bot = new Bot(botToken);
+  bot.api.config.use(autoRetry());
   const emitter = new EventEmitter();
 
   bot.on("message:text", (ctx) => {
@@ -48,18 +50,18 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
     console.log(`Telegram: Бот запущен, режим polling`);
   }
 
-  async function sendMessage(text) {
+  async function sendMessage(text, extra = {}) {
     try {
-      return await bot.api.sendMessage(chatId, text);
+      return await bot.api.sendMessage(chatId, text, extra);
     } catch (error) {
       console.error("Ошибка отправки в Telegram:", error);
       return null;
     }
   }
 
-  async function editMessage(messageId, text) {
+  async function editMessage(messageId, text, extra = {}) {
     try {
-      return await bot.api.editMessageText(chatId, messageId, text);
+      return await bot.api.editMessageText(chatId, messageId, text, extra);
     } catch (error) {
       console.error("Ошибка редактирования сообщения в Telegram:", error);
       return null;

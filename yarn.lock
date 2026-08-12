@@ -86,6 +86,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@grammyjs/auto-retry@npm:^2.0.2":
+  version: 2.0.2
+  resolution: "@grammyjs/auto-retry@npm:2.0.2"
+  dependencies:
+    debug: "npm:^4.3.4"
+  peerDependencies:
+    grammy: ^1.10.0
+  checksum: 10c0/cf6e077020bbfbf9c3efdaeeaca0c81c51fdda9bb6522ea5c699561a9423c16f42dbc5d44f569577c400bb7aafab93190f17a2e6902ab6064d6e2b44c236a57d
+  languageName: node
+  linkType: hard
+
 "@grammyjs/types@npm:3.28.0":
   version: 3.28.0
   resolution: "@grammyjs/types@npm:3.28.0"
@@ -261,7 +272,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"debug@npm:^4.4.0, debug@npm:^4.4.3":
+"debug@npm:^4.3.4, debug@npm:^4.4.0, debug@npm:^4.4.3":
   version: 4.4.3
   resolution: "debug@npm:4.4.3"
   dependencies:
@@ -291,6 +302,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "discord-notify@workspace:."
   dependencies:
+    "@grammyjs/auto-retry": "npm:^2.0.2"
     discord.js: "npm:^14.26.4"
     dotenv: "npm:^17.4.2"
     express: "npm:^5.2.1"
