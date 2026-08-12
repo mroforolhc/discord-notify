@@ -1,5 +1,7 @@
 import { startDiscordBot } from "../../integrations/discord.js";
+import { createLlm } from "../../integrations/llm.js";
 import {
+  escapeHtml,
   renderChannelSegment,
   renderMoveSegment,
   renderWindow,
@@ -11,19 +13,44 @@ const HTML_OPTS = {
   link_preview_options: { is_disabled: true },
 };
 
+// Инструкция для LLM: превратить сухие данные в одно живое сообщение.
+const LLM_SYSTEM = `Ты — бот, который сообщает в Telegram-чат о движении в голосовых каналах Discord.
+Тебе дают: что произошло за последние секунды и кто сейчас сидит в каналах.
+Составь ОДНО короткое живое сообщение на русском о том, что случилось.
+
+Правила:
+- Только простой текст: без markdown, без HTML, без ссылок.
+- Ники пиши как есть, не переводи их.
+- Упоминай, кто зашёл/вышел/перешёл и с кем оказался рядом.
+- Если кто-то скачет туда-сюда — скажи об этом коротко («поскакал», «мечется»).
+- Не выдумывай людей и события, которых нет в данных.
+- Коротко: 1–3 строки, без воды и вступлений вроде «Итак» или «Вот что произошло».
+
+Ориентируйся на стиль примеров:
+- Марков зашёл в «Голос», сидит один
+- Марков зашёл к sleroq, Селя и sakameow
+- 1, 2 и 3 зашли к 4 и 5
+- Саня и Петя вышли из «Голос»
+- Марков заглянул к A и B и вышел
+- Марков зашёл и вышел 3 раза
+- Пётр перешёл из «AFK» к Саше и Маше
+- Марков мечется по каналам, остановился в «Игры»`;
+
 export async function registerVoiceNotify({ telegram, config }) {
   const discord = await startDiscordBot(
     config.discordToken,
     config.inviteMaxAgeSeconds,
   );
+  const llm = createLlm({
+    apiKey: config.llmApiKey,
+    baseUrl: config.llmBaseUrl,
+    model: config.llmModel,
+  });
 
-  // Одно «окно активности»: пока события идут с промежутком ≤ voiceBurstWindowMs,
-  // копим их все (любые каналы/люди) в одно редактируемое сообщение.
-  // window = { messageId, channels: Map<channelId,{channelName,actors}>,
-  //            moves: Map<userId,{...}>, lastEventAt, flushPending, lastFlushAt }
+  // Окно активности: пока события идут с промежутком ≤ voiceBurstWindowMs,
+  // копим их в одно сообщение и правим его вживую (текст каждый раз от LLM).
+  // window = { messageId, channels, moves, lastEventAt, flushPending, lastFlushAt }
   let win = null;
-
-  // Сериализация фактических вызовов Telegram.
   let queue = Promise.resolve();
 
   function handleEvent(event) {
@@ -86,6 +113,8 @@ export async function registerVoiceNotify({ telegram, config }) {
     move.toChannelName = event.toChannelName;
   }
 
+  // Троттлинг правок: не чаще одной за voiceMinEditIntervalMs. Первая
+  // отправка мгновенная (lastFlushAt в прошлом), дальше события коалесцируются.
   function requestFlush() {
     if (win.flushPending) return;
     win.flushPending = true;
@@ -105,6 +134,24 @@ export async function registerVoiceNotify({ telegram, config }) {
         })
         .catch((error) => console.error("voice-notify flush:", error));
     }, wait);
+  }
+
+  async function flush(burst) {
+    const live = discord.getVoiceChannels();
+    const inviteUrl = await discord.getInviteUrl();
+
+    // Текст от LLM; при любой осечке — детерминированный рендер.
+    const llmText = await llm.complete(LLM_SYSTEM, describeForLlm(burst, live));
+    const text = llmText
+      ? renderWindow({ segments: [escapeHtml(llmText)], inviteUrl })
+      : renderWindow({ segments: buildSegments(burst, live), inviteUrl });
+
+    if (burst.messageId == null) {
+      const message = await telegram.sendMessage(text, HTML_OPTS);
+      burst.messageId = message ? message.message_id : null;
+    } else {
+      await telegram.editMessage(burst.messageId, text, HTML_OPTS);
+    }
   }
 
   // Имена участников канала (из живого состояния), кроме исключённых id.
@@ -134,11 +181,9 @@ export async function registerVoiceNotify({ telegram, config }) {
     return { joiners, leavers, bouncers };
   }
 
-  async function flush(burst) {
-    const inviteUrl = await discord.getInviteUrl();
-    const live = discord.getVoiceChannels();
+  // Детерминированные сегменты сообщения (фолбэк, если LLM недоступен).
+  function buildSegments(burst, live) {
     const segments = [];
-
     for (const [channelId, channel] of burst.channels) {
       const { joiners, leavers, bouncers } = classifyActors(channel.actors);
       segments.push(
@@ -151,7 +196,6 @@ export async function registerVoiceNotify({ telegram, config }) {
         }),
       );
     }
-
     for (const [userId, move] of burst.moves) {
       const self = new Set([userId]);
       segments.push(
@@ -165,15 +209,43 @@ export async function registerVoiceNotify({ telegram, config }) {
         }),
       );
     }
+    return segments;
+  }
 
-    const text = renderWindow({ segments, inviteUrl });
+  // Сухое описание окна + текущего состояния — вход для LLM.
+  function describeForLlm(burst, live) {
+    const lines = ["Что произошло только что:"];
 
-    if (burst.messageId == null) {
-      const message = await telegram.sendMessage(text, HTML_OPTS);
-      burst.messageId = message ? message.message_id : null;
-    } else {
-      await telegram.editMessage(burst.messageId, text, HTML_OPTS);
+    for (const channel of burst.channels.values()) {
+      const { joiners, leavers, bouncers } = classifyActors(channel.actors);
+      const parts = [];
+      if (joiners.length) parts.push(`зашли: ${joiners.join(", ")}`);
+      if (leavers.length) parts.push(`вышли: ${leavers.join(", ")}`);
+      for (const b of bouncers) {
+        parts.push(
+          `${b.name} заходил-выходил ${b.leaves} раз (${b.netIn ? "сейчас в канале" : "в итоге вышел"})`,
+        );
+      }
+      lines.push(`- Канал «${channel.channelName}»: ${parts.join("; ")}`);
     }
+
+    for (const move of burst.moves.values()) {
+      const churn = move.moveCount > 1 ? ` (метался, ${move.moveCount} переходов)` : "";
+      lines.push(
+        `- ${move.name} перешёл из «${move.fromChannelName}» в «${move.toChannelName}»${churn}`,
+      );
+    }
+
+    lines.push("", "Кто сейчас в голосовых каналах:");
+    if (live.length === 0) {
+      lines.push("- никого нет");
+    } else {
+      for (const c of live) {
+        lines.push(`- «${c.channelName}»: ${c.members.map((m) => m.name).join(", ")}`);
+      }
+    }
+
+    return lines.join("\n");
   }
 
   discord.emitter.on("voiceEvent", handleEvent);
