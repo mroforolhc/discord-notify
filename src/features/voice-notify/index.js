@@ -1,7 +1,8 @@
 import { startDiscordBot } from "../../integrations/discord.js";
 import {
-  renderChannelBurst,
-  renderMove,
+  renderChannelSegment,
+  renderMoveSegment,
+  renderWindow,
   renderVoiceStatus,
 } from "./messages.js";
 
@@ -16,40 +17,46 @@ export async function registerVoiceNotify({ telegram, config }) {
     config.inviteMaxAgeSeconds,
   );
 
-  // Бёрсты заходов/выходов — на канал; бёрсты переходов — на пользователя.
-  // Оба живут в окне voiceBurstWindowMs и редактируют одно сообщение.
-  const channelBursts = new Map(); // channelId -> { kind: "channel", ... }
-  const moveBursts = new Map(); //    userId    -> { kind: "move", ... }
+  // Одно «окно активности»: пока события идут с промежутком ≤ voiceBurstWindowMs,
+  // копим их все (любые каналы/люди) в одно редактируемое сообщение.
+  // window = { messageId, channels: Map<channelId,{channelName,actors}>,
+  //            moves: Map<userId,{...}>, lastEventAt, flushPending, lastFlushAt }
+  let win = null;
 
-  // Сериализация фактических вызовов Telegram (по всем бёрстам).
+  // Сериализация фактических вызовов Telegram.
   let queue = Promise.resolve();
 
   function handleEvent(event) {
-    if (event.type === "move") handleMove(event);
-    else handleJoinLeave(event);
-  }
-
-  function handleJoinLeave(event) {
     const now = Date.now();
 
-    let burst = channelBursts.get(event.channelId);
-    if (!burst || now - burst.lastEventAt > config.voiceBurstWindowMs) {
-      burst = {
-        kind: "channel",
-        channelId: event.channelId,
-        channelName: event.channelName,
+    if (win && now - win.lastEventAt > config.voiceBurstWindowMs) win = null;
+    if (!win) {
+      win = {
         messageId: null,
-        actors: new Map(),
+        channels: new Map(),
+        moves: new Map(),
         lastEventAt: now,
         flushPending: false,
         lastFlushAt: 0,
       };
-      channelBursts.set(event.channelId, burst);
     }
 
-    burst.channelName = event.channelName;
+    if (event.type === "move") addMove(event);
+    else addJoinLeave(event);
 
-    const actor = burst.actors.get(event.memberId) ?? {
+    win.lastEventAt = now;
+    requestFlush();
+  }
+
+  function addJoinLeave(event) {
+    let channel = win.channels.get(event.channelId);
+    if (!channel) {
+      channel = { channelName: event.channelName, actors: new Map() };
+      win.channels.set(event.channelId, channel);
+    }
+    channel.channelName = event.channelName;
+
+    const actor = channel.actors.get(event.memberId) ?? {
       name: event.memberName,
       joins: 0,
       leaves: 0,
@@ -57,94 +64,64 @@ export async function registerVoiceNotify({ telegram, config }) {
     if (event.type === "join") actor.joins += 1;
     else actor.leaves += 1;
     actor.name = event.memberName;
-    burst.actors.set(event.memberId, actor);
-
-    burst.lastEventAt = now;
-    requestFlush(burst);
+    channel.actors.set(event.memberId, actor);
   }
 
-  function handleMove(event) {
-    const now = Date.now();
-
-    let burst = moveBursts.get(event.memberId);
-    if (!burst || now - burst.lastEventAt > config.voiceBurstWindowMs) {
-      burst = {
-        kind: "move",
-        memberId: event.memberId,
+  function addMove(event) {
+    let move = win.moves.get(event.memberId);
+    if (!move) {
+      move = {
         name: event.memberName,
-        messageId: null,
         moveCount: 0,
-        // канал, из которого начался первый переход в этом бёрсте
         fromChannelId: event.fromChannelId,
         fromChannelName: event.fromChannelName,
         toChannelId: event.toChannelId,
         toChannelName: event.toChannelName,
-        lastEventAt: now,
-        flushPending: false,
-        lastFlushAt: 0,
       };
-      moveBursts.set(event.memberId, burst);
+      win.moves.set(event.memberId, move);
     }
-
-    burst.moveCount += 1;
-    burst.name = event.memberName;
-    burst.toChannelId = event.toChannelId;
-    burst.toChannelName = event.toChannelName;
-    burst.lastEventAt = now;
-    requestFlush(burst);
+    move.moveCount += 1;
+    move.name = event.memberName;
+    move.toChannelId = event.toChannelId;
+    move.toChannelName = event.toChannelName;
   }
 
-  function requestFlush(burst) {
-    if (burst.flushPending) return;
-    burst.flushPending = true;
+  function requestFlush() {
+    if (win.flushPending) return;
+    win.flushPending = true;
 
+    const target = win; // фиксируем окно на момент планирования
     const wait = Math.max(
       0,
-      config.voiceMinEditIntervalMs - (Date.now() - burst.lastFlushAt),
+      config.voiceMinEditIntervalMs - (Date.now() - target.lastFlushAt),
     );
 
     setTimeout(() => {
-      burst.flushPending = false;
+      target.flushPending = false;
       queue = queue
         .then(async () => {
-          await flush(burst);
-          burst.lastFlushAt = Date.now();
+          await flush(target);
+          target.lastFlushAt = Date.now();
         })
         .catch((error) => console.error("voice-notify flush:", error));
     }, wait);
   }
 
-  async function flush(burst) {
-    const inviteUrl = await discord.getInviteUrl();
-    const text =
-      burst.kind === "move"
-        ? moveText(burst, inviteUrl)
-        : channelText(burst, inviteUrl);
-
-    if (burst.messageId == null) {
-      const message = await telegram.sendMessage(text, HTML_OPTS);
-      burst.messageId = message ? message.message_id : null;
-    } else {
-      await telegram.editMessage(burst.messageId, text, HTML_OPTS);
-    }
-  }
-
   // Имена участников канала (из живого состояния), кроме исключённых id.
-  function membersOf(channelId, excludeIds) {
-    const channel = discord
-      .getVoiceChannels()
-      .find((c) => c.channelId === channelId);
+  function membersOf(liveChannels, channelId, excludeIds) {
+    const channel = liveChannels.find((c) => c.channelId === channelId);
     if (!channel) return [];
     return channel.members
       .filter((m) => !excludeIds.has(m.id))
       .map((m) => m.name);
   }
 
-  function channelText(burst, inviteUrl) {
+  // Раскладывает актёров канала на зашедших / вышедших / «поскакавших».
+  function classifyActors(actors) {
     const joiners = [];
     const leavers = [];
     const bouncers = [];
-    for (const actor of burst.actors.values()) {
+    for (const actor of actors.values()) {
       if (actor.leaves === 0) joiners.push(actor.name);
       else if (actor.joins === 0) leavers.push(actor.name);
       else
@@ -154,28 +131,49 @@ export async function registerVoiceNotify({ telegram, config }) {
           netIn: actor.joins > actor.leaves,
         });
     }
-    const others = membersOf(burst.channelId, new Set(burst.actors.keys()));
-    return renderChannelBurst({
-      channelName: burst.channelName,
-      joiners,
-      leavers,
-      bouncers,
-      others,
-      inviteUrl,
-    });
+    return { joiners, leavers, bouncers };
   }
 
-  function moveText(burst, inviteUrl) {
-    const self = new Set([burst.memberId]);
-    return renderMove({
-      name: burst.name,
-      moveCount: burst.moveCount,
-      fromChannelName: burst.fromChannelName,
-      fromRemain: membersOf(burst.fromChannelId, self),
-      toChannelName: burst.toChannelName,
-      others: membersOf(burst.toChannelId, self),
-      inviteUrl,
-    });
+  async function flush(burst) {
+    const inviteUrl = await discord.getInviteUrl();
+    const live = discord.getVoiceChannels();
+    const segments = [];
+
+    for (const [channelId, channel] of burst.channels) {
+      const { joiners, leavers, bouncers } = classifyActors(channel.actors);
+      segments.push(
+        renderChannelSegment({
+          channelName: channel.channelName,
+          joiners,
+          leavers,
+          bouncers,
+          others: membersOf(live, channelId, new Set(channel.actors.keys())),
+        }),
+      );
+    }
+
+    for (const [userId, move] of burst.moves) {
+      const self = new Set([userId]);
+      segments.push(
+        renderMoveSegment({
+          name: move.name,
+          moveCount: move.moveCount,
+          fromChannelName: move.fromChannelName,
+          fromRemain: membersOf(live, move.fromChannelId, self),
+          toChannelName: move.toChannelName,
+          others: membersOf(live, move.toChannelId, self),
+        }),
+      );
+    }
+
+    const text = renderWindow({ segments, inviteUrl });
+
+    if (burst.messageId == null) {
+      const message = await telegram.sendMessage(text, HTML_OPTS);
+      burst.messageId = message ? message.message_id : null;
+    } else {
+      await telegram.editMessage(burst.messageId, text, HTML_OPTS);
+    }
   }
 
   discord.emitter.on("voiceEvent", handleEvent);

@@ -43,14 +43,6 @@ function ch(name) {
   return `«${escapeHtml(name)}»`;
 }
 
-// Префикс-ссылка «Discord» + текст.
-function withInvite(inviteUrl, text) {
-  const prefix = inviteUrl
-    ? `<a href="${escapeHtml(inviteUrl)}">Discord</a>: `
-    : "";
-  return `${prefix}${text}`;
-}
-
 // «к A и B» либо «в «Канал», сидит один» — куда пришёл / где сейчас.
 function destPart(others, toChannelName) {
   return others.length > 0
@@ -58,7 +50,6 @@ function destPart(others, toChannelName) {
     : `в ${ch(toChannelName)}, сидит один`;
 }
 
-// Клауза про зашедших и оставшихся в канале.
 function joinersClause(joiners, others, channelName) {
   const verb = joiners.length === 1 ? "зашёл" : "зашли";
   if (others.length > 0) {
@@ -75,16 +66,12 @@ function leaversClause(leavers, channelName) {
   return `${namesList(leavers)} ${verb} из ${ch(channelName)}`;
 }
 
-// Клауза про «поскакавшего» одного человека.
 function bouncerClause(bouncer, others, channelName) {
   const name = escapeHtml(bouncer.name);
   const { leaves, netIn } = bouncer;
 
   if (netIn) {
-    const back =
-      others.length > 0
-        ? `к ${namesList(others)}`
-        : `в ${ch(channelName)}`;
+    const back = others.length > 0 ? `к ${namesList(others)}` : `в ${ch(channelName)}`;
     return `${name} зашёл и вышел ${leaves} ${razWord(leaves)} и снова зашёл ${back}`;
   }
   if (leaves === 1) {
@@ -95,44 +82,45 @@ function bouncerClause(bouncer, others, channelName) {
   return `${name} зашёл и вышел ${leaves} ${razWord(leaves)}`;
 }
 
-// Собирает одно контекстное сообщение по бёрсту канала.
-// joiners/leavers — массивы имён; bouncers — [{ name, leaves, netIn }];
-// others — имена присутствующих, не участвующих в бёрсте.
-export function renderChannelBurst({
+// Сегмент про один канал: заходы/выходы/«поскакал» его актёров.
+// joiners/leavers — имена; bouncers — [{ name, leaves, netIn }];
+// others — присутствующие, не участвующие в бёрсте. Без префикса-ссылки.
+export function renderChannelSegment({
   channelName,
   joiners,
   leavers,
   bouncers,
   others,
-  inviteUrl,
 }) {
   const clauses = [];
   if (joiners.length > 0) clauses.push(joinersClause(joiners, others, channelName));
   if (leavers.length > 0) clauses.push(leaversClause(leavers, channelName));
   for (const b of bouncers) clauses.push(bouncerClause(b, others, channelName));
-
-  return withInvite(inviteUrl, clauses.join("; "));
+  return clauses.join("; ");
 }
 
-// Переход между каналами. fromRemain — кто остался в исходном канале;
-// others — кто уже в целевом (без самого переходящего).
-export function renderMove({
+// Сегмент про переход одного человека между каналами. Без префикса-ссылки.
+export function renderMoveSegment({
   name,
   moveCount,
   fromChannelName,
   fromRemain,
   toChannelName,
   others,
-  inviteUrl,
 }) {
   const dest = destPart(others, toChannelName);
-  let text;
   if (moveCount <= 1) {
     const src =
       fromRemain.length > 0 ? `сидел с ${namesList(fromRemain)}` : "был один";
-    text = `${escapeHtml(name)} перешёл из ${ch(fromChannelName)} (${src}) ${dest}`;
-  } else {
-    text = `${escapeHtml(name)} мечется по каналам, остановился ${dest}`;
+    return `${escapeHtml(name)} перешёл из ${ch(fromChannelName)} (${src}) ${dest}`;
   }
-  return withInvite(inviteUrl, text);
+  return `${escapeHtml(name)} мечется по каналам, остановился ${dest}`;
+}
+
+// Одно сообщение окна: все сегменты (каналы + переходы) с префиксом-ссылкой.
+export function renderWindow({ segments, inviteUrl }) {
+  const prefix = inviteUrl
+    ? `<a href="${escapeHtml(inviteUrl)}">Discord</a>: `
+    : "";
+  return `${prefix}${segments.join("\n")}`;
 }
