@@ -1,4 +1,18 @@
-export function escapeHtml(text) {
+export interface VoiceChannel {
+  channelId: string;
+  channelName: string;
+  members: string[];
+}
+
+export interface Visit {
+  memberId: string;
+  memberName: string;
+  joinAt: number | null;
+  leaveAt: number | null;
+  lastEventAt: number;
+}
+
+export function escapeHtml(text: string): string {
   return String(text)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -7,19 +21,19 @@ export function escapeHtml(text) {
 
 const NO_CHANNELS = "Все голосовые каналы пусты";
 
-function channelLines(channels) {
+function channelLines(channels: VoiceChannel[]): string[] {
   return channels.map(
     (c) =>
       `<b>${escapeHtml(c.channelName)}</b>: ${c.members.map(escapeHtml).join(", ")}`,
   );
 }
 
-export function renderVoiceStatus(channels) {
+export function renderVoiceStatus(channels: VoiceChannel[]): string {
   if (channels.length === 0) return NO_CHANNELS;
   return channelLines(channels).join("\n");
 }
 
-function visitLines(visit) {
+function visitLines(visit: Visit): { text: string; at: number }[] {
   const name = escapeHtml(visit.memberName);
 
   // Оба события за одну сессию — склеиваем в одну фразу по их порядку.
@@ -40,7 +54,15 @@ function visitLines(visit) {
   return [];
 }
 
-export function renderSessionMessage({ visits, channels, inviteUrl }) {
+export function renderSessionMessage({
+  visits,
+  channels,
+  inviteUrl,
+}: {
+  visits: Visit[];
+  channels: VoiceChannel[];
+  inviteUrl: string | null;
+}): string {
   const logLines = visits.flatMap(visitLines).sort((a, b) => a.at - b.at);
 
   const parts = logLines.map((line) => line.text);

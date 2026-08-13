@@ -1,30 +1,42 @@
 import { startDiscordBot } from "../../integrations/discord.js";
+import type { VoiceEvent } from "../../integrations/discord.js";
 import { renderSessionMessage, renderVoiceStatus } from "./messages.js";
+import type { Visit } from "./messages.js";
+import type { TelegramBot } from "../../telegram/bot.js";
+import type { Config } from "../../config.js";
 
 const HTML_OPTS = {
   parse_mode: "HTML",
   link_preview_options: { is_disabled: true },
 };
 
-export async function registerVoiceNotify({ telegram, config }) {
+interface Session {
+  messageId: number | null;
+  visits: Visit[];
+  lastEventAt: number;
+  interrupted: boolean;
+}
+
+export async function registerVoiceNotify({
+  telegram,
+  config,
+}: {
+  telegram: TelegramBot;
+  config: Config;
+}): Promise<void> {
   const discord = await startDiscordBot(
     config.discordToken,
     config.inviteMaxAgeSeconds,
   );
 
-  // Одна живая сессия-сводка: { messageId, visits: Visit[], interrupted }.
-  // Visit = { memberId, memberName, joinAt, leaveAt, lastEventAt }.
-  // interrupted = кто-то написал в чат после нашего сообщения (мы больше не последние).
-  let session = null;
-
-  // Сериализация + троттлинг правок Telegram.
+  let session: Session | null = null;
   let queue = Promise.resolve();
   let flushPending = false;
   let lastFlushAt = 0;
 
-  function currentVisit(memberId, now) {
-    for (let i = session.visits.length - 1; i >= 0; i--) {
-      const v = session.visits[i];
+  function currentVisit(s: Session, memberId: string, now: number): Visit | null {
+    for (let i = s.visits.length - 1; i >= 0; i--) {
+      const v = s.visits[i];
       if (v.memberId === memberId) {
         return now - v.lastEventAt <= config.voiceCollapseMs ? v : null;
       }
@@ -32,33 +44,29 @@ export async function registerVoiceNotify({ telegram, config }) {
     return null;
   }
 
-  function lineCount(v) {
+  function lineCount(v: Visit): number {
     return v.joinAt != null || v.leaveAt != null ? 1 : 0;
   }
 
-  function trim() {
-    let total = session.visits.reduce((s, v) => s + lineCount(v), 0);
-    while (total > config.voiceMaxLogLines && session.visits.length > 1) {
-      total -= lineCount(session.visits.shift());
+  function trim(s: Session): void {
+    let total = s.visits.reduce((acc, v) => acc + lineCount(v), 0);
+    while (total > config.voiceMaxLogLines && s.visits.length > 1) {
+      total -= lineCount(s.visits.shift()!);
     }
   }
 
-  function handleEvent(event) {
+  function handleEvent(event: VoiceEvent): void {
     const now = Date.now();
 
     if (event.type === "move") {
-      // Переход между каналами: не логируем и не создаём новое сообщение.
-      // Но если есть живое сообщение — обновляем в нём сводку «сейчас в каналах»
-      // (перешедший появится в другом канале). Нет сообщения — move ничего не делает.
       if (session && now - session.lastEventAt <= config.voiceSessionIdleMs) {
         session.lastEventAt = now;
         requestFlush();
       }
+
       return;
     }
 
-    // Новое сообщение создаём, только если пауза прошла И нас уже перебили в чате.
-    // Пока наше сообщение остаётся последним — продолжаем редактировать его.
     if (
       session &&
       now - session.lastEventAt > config.voiceSessionIdleMs &&
@@ -66,6 +74,7 @@ export async function registerVoiceNotify({ telegram, config }) {
     ) {
       session = null;
     }
+
     if (!session) {
       session = {
         messageId: null,
@@ -74,10 +83,11 @@ export async function registerVoiceNotify({ telegram, config }) {
         interrupted: false,
       };
     }
+    const s = session;
 
     const isJoin = event.type === "join";
 
-    let v = currentVisit(event.memberId, now);
+    let v = currentVisit(s, event.memberId, now);
     if (!v) {
       v = {
         memberId: event.memberId,
@@ -86,7 +96,7 @@ export async function registerVoiceNotify({ telegram, config }) {
         leaveAt: null,
         lastEventAt: now,
       };
-      session.visits.push(v);
+      s.visits.push(v);
     }
 
     if (isJoin) {
@@ -106,8 +116,8 @@ export async function registerVoiceNotify({ telegram, config }) {
     v.memberName = event.memberName;
     v.lastEventAt = now;
 
-    session.lastEventAt = now;
-    trim();
+    s.lastEventAt = now;
+    trim(s);
     requestFlush();
   }
 
@@ -131,18 +141,21 @@ export async function registerVoiceNotify({ telegram, config }) {
     }, wait);
   }
 
-  async function flush() {
+  async function flush(): Promise<void> {
+    if (!session) return;
+    const s = session;
+
     const text = renderSessionMessage({
-      visits: session.visits,
+      visits: s.visits,
       channels: discord.getVoiceChannels(),
       inviteUrl: await discord.getInviteUrl(),
     });
 
-    if (session.messageId == null) {
+    if (s.messageId == null) {
       const message = await telegram.sendMessage(text, HTML_OPTS);
-      session.messageId = message ? message.message_id : null;
+      s.messageId = message ? message.message_id : null;
     } else {
-      await telegram.editMessage(session.messageId, text, HTML_OPTS);
+      await telegram.editMessage(s.messageId, text, HTML_OPTS);
     }
   }
 
