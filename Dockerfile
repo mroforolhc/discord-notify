@@ -1,4 +1,7 @@
-FROM node:24-slim AS deps
+# Install-стадии на полном node:24 (Debian bookworm): в нём есть build-essential
+# и python3, поэтому нативный better-sqlite3 (нет prebuilt под Node 24)
+# компилируется без доустановки тулчейна. Финальный образ — slim.
+FROM node:24 AS deps
 WORKDIR /app
 COPY package.json yarn.lock .yarnrc.yml ./
 RUN corepack enable && yarn install --immutable
@@ -9,7 +12,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN corepack enable && yarn build
 
-FROM node:24-slim AS prod-deps
+FROM node:24 AS prod-deps
 WORKDIR /app
 COPY package.json yarn.lock .yarnrc.yml ./
 RUN corepack enable && yarn workspaces focus --production
