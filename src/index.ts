@@ -2,6 +2,7 @@ import "dotenv/config";
 import { config } from "./config.js";
 import { startTelegramBot } from "./telegram/bot.js";
 import { registerVoiceNotify } from "./features/voice-notify/index.js";
+import { registerChatStats } from "./features/chat-stats/index.js";
 
 const telegram = await startTelegramBot(
   config.telegramBotToken,
@@ -15,3 +16,5 @@ const telegram = await startTelegramBot(
 );
 
 await registerVoiceNotify({ telegram, config });
+
+registerChatStats({ telegram, config });

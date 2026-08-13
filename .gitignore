@@ -19,3 +19,5 @@ node_modules
 .env
 .direnv/
 dist/
+data/
+result.json

@@ -2,21 +2,31 @@
   "name": "discord-notify",
   "type": "module",
   "packageManager": "yarn@4.17.0",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "import:history": "node dist/features/chat-stats/import.js"
   },
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",
+    "better-sqlite3": "^13.0.3",
     "discord.js": "^14.26.4",
     "dotenv": "^17.4.2",
+    "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
     "grammy": "^1.44.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
     "@types/node": "^22.10.0",
+    "drizzle-kit": "^0.31.10",
+    "stream-json": "^3.5.0",
     "typescript": "^5.8.0"
   }
 }

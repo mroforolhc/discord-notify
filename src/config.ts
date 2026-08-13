@@ -19,6 +19,7 @@ export const config = {
   telegramWebhookUrl: process.env.TELEGRAM_WEBHOOK_URL,
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,
   port: Number(process.env.PORT) || 8080,
+  statsDbPath: process.env.STATS_DB_PATH || "./data/stats.db",
 };
 
 export type Config = typeof config;
