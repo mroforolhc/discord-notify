@@ -14,17 +14,22 @@ interface DayRow {
   c: number;
 }
 
-// Сообщения по дням за последние N дней в указанном чате.
-// Сутки режем по фиксированному смещению (МСК=+3), а НЕ по 'localtime' — иначе
-// в UTC-контейнере дни считались бы по UTC. Колонки — типизированные ссылки Drizzle;
-// sql`` только для функций дат SQLite, у которых нет билдер-хелперов.
+// Сообщения по дням за последние N суток, ВКЛЮЧАЯ сегодня (сегодня — неполный день,
+// он просто прирастает новыми сообщениями). Сутки и нижнюю границу режем по фиксированному
+// смещению (МСК=+3), а НЕ по 'localtime' (в UTC-контейнере оно = UTC). Нижняя граница
+// привязана к полуночи МСК начала окна, а не к текущей секунде — иначе самый старый день
+// был бы обрезан и «плыл» при каждом вызове.
 function messagesPerDay(
   db: StatsDb,
   chatId: number,
   days: number,
   tzOffsetHours: number,
 ): DayRow[] {
-  const day = sql<string>`strftime('%Y-%m-%d', ${messages.dateUnix} + ${tzOffsetHours * 3600}, 'unixepoch')`;
+  const offSec = tzOffsetHours * 3600;
+  const tzMod = `${tzOffsetHours >= 0 ? "+" : ""}${tzOffsetHours} hours`;
+  const day = sql<string>`strftime('%Y-%m-%d', ${messages.dateUnix} + ${offSec}, 'unixepoch')`;
+  // Полночь МСК начала окна: сегодня − (N−1) дней (всего N суток вместе с сегодня).
+  const low = sql`unixepoch(date('now', ${tzMod}, ${`-${days - 1} days`})) - ${offSec}`;
   return db
     .select({ day, c: count() })
     .from(messages)
@@ -32,7 +37,7 @@ function messagesPerDay(
       and(
         eq(messages.kind, "message"),
         eq(messages.chatId, chatId),
-        gte(messages.dateUnix, sql`unixepoch('now', ${`-${days} days`})`),
+        gte(messages.dateUnix, low),
       ),
     )
     .groupBy(day)
