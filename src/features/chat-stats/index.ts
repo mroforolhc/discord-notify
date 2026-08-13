@@ -14,11 +14,17 @@ interface DayRow {
   c: number;
 }
 
-// Сообщения по дням за последние N дней в указанном чате (локальное время).
-// Колонки — типизированные ссылки Drizzle; sql`` только для функций дат SQLite,
-// у которых нет билдер-хелперов.
-function messagesPerDay(db: StatsDb, chatId: number, days: number): DayRow[] {
-  const day = sql<string>`strftime('%Y-%m-%d', ${messages.dateUnix}, 'unixepoch', 'localtime')`;
+// Сообщения по дням за последние N дней в указанном чате.
+// Сутки режем по фиксированному смещению (МСК=+3), а НЕ по 'localtime' — иначе
+// в UTC-контейнере дни считались бы по UTC. Колонки — типизированные ссылки Drizzle;
+// sql`` только для функций дат SQLite, у которых нет билдер-хелперов.
+function messagesPerDay(
+  db: StatsDb,
+  chatId: number,
+  days: number,
+  tzOffsetHours: number,
+): DayRow[] {
+  const day = sql<string>`strftime('%Y-%m-%d', ${messages.dateUnix} + ${tzOffsetHours * 3600}, 'unixepoch')`;
   return db
     .select({ day, c: count() })
     .from(messages)
@@ -116,7 +122,7 @@ export function registerChatStats({
   telegram.emitter.on("command", (command: string, ctx: Context) => {
     if (command !== "/messages") return;
     try {
-      const rows = messagesPerDay(db, statsChatId, DAYS);
+      const rows = messagesPerDay(db, statsChatId, DAYS, config.statsTzOffsetHours);
       ctx.reply(renderPerDay(rows, DAYS), { parse_mode: "HTML" });
     } catch (error) {
       console.error("chat-stats: /messages не удалось:", error);

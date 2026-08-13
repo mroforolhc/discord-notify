@@ -20,6 +20,12 @@ export const config = {
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,
   port: Number(process.env.PORT) || 8080,
   statsDbPath: process.env.STATS_DB_PATH || "./data/stats.db",
+  // Смещение для нарезки суток в статистике. МСК = +3 (без перехода на летнее
+  // время). Фиксированный сдвиг, чтобы не зависеть от TZ контейнера (в Docker — UTC).
+  statsTzOffsetHours:
+    process.env.STATS_TZ_OFFSET_HOURS != null
+      ? Number(process.env.STATS_TZ_OFFSET_HOURS)
+      : 3,
 };
 
 export type Config = typeof config;
