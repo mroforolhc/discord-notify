@@ -1,7 +1,41 @@
 import { Client, GatewayIntentBits } from "discord.js";
+import type { VoiceBasedChannel, GuildMember } from "discord.js";
 import { EventEmitter } from "node:events";
+import type { VoiceChannel } from "../features/voice-notify/messages.js";
 
-export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
+export interface VoiceEvent {
+  type: "join" | "leave" | "move";
+  memberId: string;
+  memberName: string;
+  username: string;
+  avatarUrl: string;
+}
+
+interface DiscordEvents {
+  voiceEvent: [event: VoiceEvent];
+}
+
+export interface DiscordEmitter extends EventEmitter {
+  on<K extends keyof DiscordEvents>(
+    event: K,
+    listener: (...args: DiscordEvents[K]) => void,
+  ): this;
+  emit<K extends keyof DiscordEvents>(
+    event: K,
+    ...args: DiscordEvents[K]
+  ): boolean;
+}
+
+export interface DiscordBot {
+  emitter: DiscordEmitter;
+  getVoiceChannels: () => VoiceChannel[];
+  getInviteUrl: () => Promise<string | null>;
+}
+
+export async function startDiscordBot(
+  token: string,
+  inviteMaxAgeSeconds = 21600,
+): Promise<DiscordBot> {
   const client = new Client({
     intents: [
       GatewayIntentBits.Guilds,
@@ -10,10 +44,10 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
     ],
   });
 
-  const emitter = new EventEmitter();
-  let cachedInvite = null; // { url, expiresAt }
+  const emitter: DiscordEmitter = new EventEmitter();
+  let cachedInvite: { url: string; expiresAt: number } | null = null;
 
-  async function getInviteUrl() {
+  async function getInviteUrl(): Promise<string | null> {
     if (cachedInvite && cachedInvite.expiresAt > Date.now()) {
       return cachedInvite.url;
     }
@@ -40,15 +74,15 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
     }
   }
 
-  function pickInviteChannel() {
+  function pickInviteChannel(): VoiceBasedChannel | null {
     for (const guild of client.guilds.cache.values()) {
+      const me = guild.members.me;
+      if (!me) continue;
       const channels = [...guild.channels.cache.values()]
         .filter(
-          (c) =>
+          (c): c is VoiceBasedChannel =>
             c.isVoiceBased() &&
-            c
-              .permissionsFor(guild.members.me)
-              ?.has("CreateInstantInvite"),
+            !!c.permissionsFor(me)?.has("CreateInstantInvite"),
         )
         .sort((a, b) => (a.id < b.id ? -1 : 1));
       if (channels.length > 0) return channels[0];
@@ -57,10 +91,10 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
   }
 
   client.once("clientReady", () => {
-    console.log(`Discord: Бот запущен как ${client.user.tag}`);
+    console.log(`Discord: Бот запущен как ${client.user?.tag}`);
   });
 
-  function memberMeta(member) {
+  function memberMeta(member: GuildMember): Omit<VoiceEvent, "type"> {
     return {
       memberId: member.id,
       memberName: member.displayName,
@@ -71,6 +105,7 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
 
   client.on("voiceStateUpdate", (oldState, newState) => {
     const member = newState.member || oldState.member;
+    if (!member) return;
     const beforeChannel = oldState.channel;
     const afterChannel = newState.channel;
 
@@ -89,8 +124,8 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
     }
   });
 
-  function getVoiceChannels() {
-    const result = [];
+  function getVoiceChannels(): VoiceChannel[] {
+    const result: VoiceChannel[] = [];
     for (const guild of client.guilds.cache.values()) {
       for (const channel of guild.channels.cache.values()) {
         if (channel.isVoiceBased() && channel.members.size > 0) {

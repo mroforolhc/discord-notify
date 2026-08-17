@@ -1,4 +1,27 @@
-export function escapeHtml(text) {
+import type { PeopleStore, Gender } from "../../people/store.js";
+
+export interface VoiceMember {
+  id: string;
+  displayName: string;
+  username: string;
+  avatarUrl: string;
+}
+
+export interface VoiceChannel {
+  channelId: string;
+  channelName: string;
+  members: VoiceMember[];
+}
+
+export interface Visit {
+  memberId: string;
+  memberName: string;
+  joinAt: number | null;
+  leaveAt: number | null;
+  lastEventAt: number;
+}
+
+export function escapeHtml(text: string): string {
   return String(text)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -11,20 +34,24 @@ const NO_CHANNELS = "Все голосовые каналы пусты";
 const VERBS = {
   join: { m: "зашёл", f: "зашла", u: "зашёл(ла)" },
   leave: { m: "вышел", f: "вышла", u: "вышел(ла)" },
-};
+} as const;
 
-function verb(kind, gender) {
+function verb(kind: "join" | "leave", gender: Gender | undefined): string {
   const forms = VERBS[kind];
   return gender === "m" ? forms.m : gender === "f" ? forms.f : forms.u;
 }
 
 // Каноничное имя из мапы перебивает Discord-ник (защита от спуфинга).
-function resolvePerson(people, id, fallbackName) {
-  const p = id != null ? people.get(id) : undefined;
+function resolvePerson(
+  people: PeopleStore,
+  id: string,
+  fallbackName: string,
+): { name: string; gender: Gender | undefined } {
+  const p = people.get(id);
   return { name: p?.name ?? fallbackName, gender: p?.gender };
 }
 
-function channelLines(channels, people) {
+function channelLines(channels: VoiceChannel[], people: PeopleStore): string[] {
   return channels.map((c) => {
     const names = c.members.map((m) =>
       escapeHtml(resolvePerson(people, m.id, m.displayName).name),
@@ -33,12 +60,18 @@ function channelLines(channels, people) {
   });
 }
 
-export function renderVoiceStatus(channels, people) {
+export function renderVoiceStatus(
+  channels: VoiceChannel[],
+  people: PeopleStore,
+): string {
   if (channels.length === 0) return NO_CHANNELS;
   return channelLines(channels, people).join("\n");
 }
 
-function visitLines(visit, people) {
+function visitLines(
+  visit: Visit,
+  people: PeopleStore,
+): { text: string; at: number }[] {
   const { name: rawName, gender } = resolvePerson(
     people,
     visit.memberId,
@@ -66,7 +99,17 @@ function visitLines(visit, people) {
   return [];
 }
 
-export function renderSessionMessage({ visits, channels, inviteUrl, people }) {
+export function renderSessionMessage({
+  visits,
+  channels,
+  inviteUrl,
+  people,
+}: {
+  visits: Visit[];
+  channels: VoiceChannel[];
+  inviteUrl: string | null;
+  people: PeopleStore;
+}): string {
   const logLines = visits
     .flatMap((v) => visitLines(v, people))
     .sort((a, b) => a.at - b.at);
