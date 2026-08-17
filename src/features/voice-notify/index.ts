@@ -175,9 +175,10 @@ export async function registerVoiceNotify({
     }
   });
 
-  telegram.emitter.on("command", (command) => {
+  telegram.emitter.on("command", (command, ctx) => {
     if (command === "/status") {
-      telegram.sendMessage(
+      telegram.sendMessageTo(
+        ctx.chat.id,
         renderVoiceStatus(discord.getVoiceChannels(), people),
         HTML_OPTS,
       );

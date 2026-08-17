@@ -53,6 +53,23 @@ export interface TelegramBot {
     extra?: Record<string, unknown>,
   ) => Promise<unknown>;
   answerCallback: (callbackQueryId: string, text?: string) => Promise<unknown>;
+  // Варианты с явным адресатом — чтобы отвечать в тот чат, откуда написали.
+  sendMessageTo: (
+    chat: number | string,
+    text: string,
+    extra?: Record<string, unknown>,
+  ) => Promise<{ message_id: number } | null>;
+  sendPhotoTo: (
+    chat: number | string,
+    photo: string,
+    extra?: Record<string, unknown>,
+  ) => Promise<{ message_id: number } | null>;
+  editMessageCaptionTo: (
+    chat: number | string,
+    messageId: number,
+    caption: string,
+    extra?: Record<string, unknown>,
+  ) => Promise<unknown>;
   stop: () => Promise<void>;
 }
 
@@ -112,10 +129,14 @@ export async function startTelegramBot(
     console.log(`Telegram: Бот запущен, режим polling`);
   }
 
-  async function sendMessage(text: string, extra: Record<string, unknown> = {}) {
+  async function sendMessageTo(
+    chat: number | string,
+    text: string,
+    extra: Record<string, unknown> = {},
+  ) {
     try {
       return await bot.api.sendMessage(
-        chatId,
+        chat,
         text,
         extra as Parameters<typeof bot.api.sendMessage>[2],
       );
@@ -123,6 +144,10 @@ export async function startTelegramBot(
       console.error("Ошибка отправки в Telegram:", error);
       return null;
     }
+  }
+
+  function sendMessage(text: string, extra: Record<string, unknown> = {}) {
+    return sendMessageTo(chatId, text, extra);
   }
 
   async function editMessage(
@@ -143,10 +168,14 @@ export async function startTelegramBot(
     }
   }
 
-  async function sendPhoto(photo: string, extra: Record<string, unknown> = {}) {
+  async function sendPhotoTo(
+    chat: number | string,
+    photo: string,
+    extra: Record<string, unknown> = {},
+  ) {
     try {
       return await bot.api.sendPhoto(
-        chatId,
+        chat,
         photo,
         extra as Parameters<typeof bot.api.sendPhoto>[2],
       );
@@ -156,13 +185,18 @@ export async function startTelegramBot(
     }
   }
 
-  async function editMessageCaption(
+  function sendPhoto(photo: string, extra: Record<string, unknown> = {}) {
+    return sendPhotoTo(chatId, photo, extra);
+  }
+
+  async function editMessageCaptionTo(
+    chat: number | string,
     messageId: number,
     caption: string,
     extra: Record<string, unknown> = {},
   ) {
     try {
-      return await bot.api.editMessageCaption(chatId, messageId, {
+      return await bot.api.editMessageCaption(chat, messageId, {
         caption,
         ...extra,
       } as Parameters<typeof bot.api.editMessageCaption>[2]);
@@ -170,6 +204,14 @@ export async function startTelegramBot(
       console.error("Ошибка редактирования подписи в Telegram:", error);
       return null;
     }
+  }
+
+  function editMessageCaption(
+    messageId: number,
+    caption: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    return editMessageCaptionTo(chatId, messageId, caption, extra);
   }
 
   // Гасит «часики» на нажатой инлайн-кнопке; text — опциональный тост.
@@ -198,6 +240,9 @@ export async function startTelegramBot(
     sendPhoto,
     editMessageCaption,
     answerCallback,
+    sendMessageTo,
+    sendPhotoTo,
+    editMessageCaptionTo,
     stop,
   };
 }

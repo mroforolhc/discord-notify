@@ -35,8 +35,11 @@ export function registerNaming({
 }): void {
   // id -> метаданные для всех, кого видели (для списков и карточек).
   const directory = new Map<string, DirEntry>();
-  // message_id force_reply-промпта -> { id, cardMessageId } — чей ответ ждём.
-  const pending = new Map<number, { id: string; cardMessageId: number }>();
+  // message_id force_reply-промпта -> { id, cardMessageId, chat } — чей ответ ждём.
+  const pending = new Map<
+    number,
+    { id: string; cardMessageId: number; chat: number }
+  >();
 
   function remember(
     id: string,
@@ -58,17 +61,8 @@ export function registerNaming({
     remember(e.memberId, e.memberName, e.username, e.avatarUrl);
   });
 
-  function inChat(ctx: { chat?: { id: number } }): boolean {
-    return String(ctx.chat?.id) === String(config.telegramChatId);
-  }
-
-  // Разрешаем только из целевого чата и только админам из allowlist (.env).
-  // Пустой список = никто, пока id не прописаны.
-  function allowed(ctx: {
-    chat?: { id: number };
-    from?: { id: number };
-  }): boolean {
-    return inChat(ctx) && config.adminUserIds.includes(String(ctx.from?.id));
+  function allowed(ctx: { from?: { id: number } }): boolean {
+    return config.adminUserIds.includes(String(ctx.from?.id));
   }
 
   function personLabel(id: string, meta: DirEntry): string {
@@ -122,6 +116,7 @@ export function registerNaming({
 
   telegram.emitter.on("command", (command, ctx) => {
     if (!allowed(ctx)) return;
+    const chat = ctx.chat.id;
 
     if (command === "/people") {
       const members = discord.getVoiceChannels().flatMap((c) => c.members);
@@ -134,10 +129,10 @@ export function registerNaming({
         entries.push([m.id, entry]);
       }
       if (entries.length === 0) {
-        telegram.sendMessage("Сейчас в войсе никого нет");
+        telegram.sendMessageTo(chat, "Сейчас в войсе никого нет");
         return;
       }
-      telegram.sendMessage("🎧 Кого назвать?", {
+      telegram.sendMessageTo(chat, "🎧 Кого назвать?", {
         reply_markup: listKeyboard(entries),
       });
     }
@@ -147,17 +142,16 @@ export function registerNaming({
         .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
         .slice(0, RECENT_LIMIT);
       if (entries.length === 0) {
-        telegram.sendMessage("Ещё никого не видел в войсе");
+        telegram.sendMessageTo(chat, "Ещё никого не видел в войсе");
         return;
       }
-      telegram.sendMessage("👀 Недавно в войсе:", {
+      telegram.sendMessageTo(chat, "👀 Недавно в войсе:", {
         reply_markup: listKeyboard(entries),
       });
     }
   });
 
   telegram.emitter.on("callback", async (data, ctx) => {
-    if (!inChat(ctx)) return;
     const answer = (text?: string) =>
       telegram.answerCallback(ctx.callbackQuery.id, text);
     if (!allowed(ctx)) {
@@ -165,13 +159,18 @@ export function registerNaming({
       return;
     }
     const cardMessage = ctx.callbackQuery.message;
+    const chat = ctx.chat?.id ?? cardMessage?.chat.id; // тот же чат, где карточка
+    if (chat == null) {
+      await answer();
+      return;
+    }
 
     if (data.startsWith("pick:")) {
       const id = data.slice(5);
       const meta = directory.get(id);
       await answer();
       if (!meta) return;
-      await telegram.sendPhoto(meta.avatarUrl, {
+      await telegram.sendPhotoTo(chat, meta.avatarUrl, {
         caption: cardCaption(id),
         reply_markup: cardKeyboard(id),
         ...HTML,
@@ -185,7 +184,8 @@ export function registerNaming({
       const current = people.get(id)?.gender;
       people.set(id, { gender: current === g ? undefined : g }); // тап по активному снимает
       if (cardMessage) {
-        await telegram.editMessageCaption(
+        await telegram.editMessageCaptionTo(
+          chat,
           cardMessage.message_id,
           cardCaption(id),
           { reply_markup: cardKeyboard(id), ...HTML },
@@ -198,7 +198,8 @@ export function registerNaming({
     if (data.startsWith("name:")) {
       const id = data.slice(5);
       const meta = directory.get(id);
-      const prompt = await telegram.sendMessage(
+      const prompt = await telegram.sendMessageTo(
+        chat,
         `Имя для @${escapeHtml(meta?.username ?? "?")}?`,
         {
           reply_markup: { force_reply: true, input_field_placeholder: "Имя" },
@@ -209,6 +210,7 @@ export function registerNaming({
         pending.set(prompt.message_id, {
           id,
           cardMessageId: cardMessage.message_id,
+          chat,
         });
       }
       await answer();
@@ -229,10 +231,12 @@ export function registerNaming({
     if (!name) return;
 
     people.set(entry.id, { name });
-    telegram.editMessageCaption(entry.cardMessageId, cardCaption(entry.id), {
-      reply_markup: cardKeyboard(entry.id),
-      ...HTML,
-    });
-    telegram.sendMessage(`✅ Готово: ${escapeHtml(name)}`, HTML);
+    telegram.editMessageCaptionTo(
+      entry.chat,
+      entry.cardMessageId,
+      cardCaption(entry.id),
+      { reply_markup: cardKeyboard(entry.id), ...HTML },
+    );
+    telegram.sendMessageTo(ctx.chat.id, `✅ Готово: ${escapeHtml(name)}`, HTML);
   });
 }
