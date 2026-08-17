@@ -100,7 +100,10 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
           result.push({
             channelId: channel.id,
             channelName: channel.name,
-            members: [...channel.members.values()].map((m) => m.displayName),
+            members: [...channel.members.values()].map((m) => ({
+              id: m.id,
+              displayName: m.displayName,
+            })),
           });
         }
       }

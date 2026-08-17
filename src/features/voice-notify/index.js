@@ -1,4 +1,5 @@
 import { startDiscordBot } from "../../integrations/discord.js";
+import { createPeopleStore } from "../../people/store.js";
 import { renderSessionMessage, renderVoiceStatus } from "./messages.js";
 
 const HTML_OPTS = {
@@ -11,6 +12,8 @@ export async function registerVoiceNotify({ telegram, config }) {
     config.discordToken,
     config.inviteMaxAgeSeconds,
   );
+
+  const people = createPeopleStore(config.peopleFile);
 
   // Одна живая сессия-сводка: { messageId, visits: Visit[], interrupted }.
   // Visit = { memberId, memberName, joinAt, leaveAt, lastEventAt }.
@@ -136,6 +139,7 @@ export async function registerVoiceNotify({ telegram, config }) {
       visits: session.visits,
       channels: discord.getVoiceChannels(),
       inviteUrl: await discord.getInviteUrl(),
+      people,
     });
 
     if (session.messageId == null) {
@@ -160,7 +164,7 @@ export async function registerVoiceNotify({ telegram, config }) {
   telegram.emitter.on("command", (command) => {
     if (command === "/status") {
       telegram.sendMessage(
-        renderVoiceStatus(discord.getVoiceChannels()),
+        renderVoiceStatus(discord.getVoiceChannels(), people),
         HTML_OPTS,
       );
     }
