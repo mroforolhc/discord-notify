@@ -60,23 +60,24 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
     console.log(`Discord: Бот запущен как ${client.user.tag}`);
   });
 
+  function memberMeta(member) {
+    return {
+      memberId: member.id,
+      memberName: member.displayName,
+      username: member.user.username,
+      avatarUrl: member.user.displayAvatarURL({ extension: "png", size: 128 }),
+    };
+  }
+
   client.on("voiceStateUpdate", (oldState, newState) => {
     const member = newState.member || oldState.member;
     const beforeChannel = oldState.channel;
     const afterChannel = newState.channel;
 
     if (!beforeChannel && afterChannel) {
-      emitter.emit("voiceEvent", {
-        type: "join",
-        memberId: member.id,
-        memberName: member.displayName,
-      });
+      emitter.emit("voiceEvent", { type: "join", ...memberMeta(member) });
     } else if (beforeChannel && !afterChannel) {
-      emitter.emit("voiceEvent", {
-        type: "leave",
-        memberId: member.id,
-        memberName: member.displayName,
-      });
+      emitter.emit("voiceEvent", { type: "leave", ...memberMeta(member) });
     } else if (
       beforeChannel &&
       afterChannel &&
@@ -84,11 +85,7 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
     ) {
       // Переход между каналами (drag): join/leave не срабатывают, но сводка
       // «сейчас в каналах» изменилась. Совпадение id = мьют/глушение — игнорим.
-      emitter.emit("voiceEvent", {
-        type: "move",
-        memberId: member.id,
-        memberName: member.displayName,
-      });
+      emitter.emit("voiceEvent", { type: "move", ...memberMeta(member) });
     }
   });
 
@@ -103,6 +100,11 @@ export async function startDiscordBot(token, inviteMaxAgeSeconds = 21600) {
             members: [...channel.members.values()].map((m) => ({
               id: m.id,
               displayName: m.displayName,
+              username: m.user.username,
+              avatarUrl: m.user.displayAvatarURL({
+                extension: "png",
+                size: 128,
+              }),
             })),
           });
         }

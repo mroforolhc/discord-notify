@@ -169,4 +169,6 @@ export async function registerVoiceNotify({ telegram, config }) {
       );
     }
   });
+
+  return { discord, people };
 }

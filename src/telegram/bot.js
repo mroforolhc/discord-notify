@@ -20,6 +20,10 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
     emitter.emit("command", command, ctx);
   });
 
+  bot.on("callback_query:data", (ctx) => {
+    emitter.emit("callback", ctx.callbackQuery.data, ctx);
+  });
+
   bot.catch(({ error }) => {
     console.error("Ошибка Telegram-бота:", error);
   });
@@ -69,6 +73,37 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
     }
   }
 
+  async function sendPhoto(photo, extra = {}) {
+    try {
+      return await bot.api.sendPhoto(chatId, photo, extra);
+    } catch (error) {
+      console.error("Ошибка отправки фото в Telegram:", error);
+      return null;
+    }
+  }
+
+  async function editMessageCaption(messageId, caption, extra = {}) {
+    try {
+      return await bot.api.editMessageCaption(chatId, messageId, {
+        caption,
+        ...extra,
+      });
+    } catch (error) {
+      console.error("Ошибка редактирования подписи в Telegram:", error);
+      return null;
+    }
+  }
+
+  // Гасит «часики» на нажатой инлайн-кнопке; text — опциональный тост.
+  async function answerCallback(callbackQueryId, text) {
+    try {
+      return await bot.api.answerCallbackQuery(callbackQueryId, { text });
+    } catch (error) {
+      console.error("Ошибка ответа на callback в Telegram:", error);
+      return null;
+    }
+  }
+
   async function stop() {
     if (server) {
       await bot.api.deleteWebhook();
@@ -78,5 +113,13 @@ export async function startTelegramBot(botToken, chatId, options = {}) {
     }
   }
 
-  return { emitter, sendMessage, editMessage, stop };
+  return {
+    emitter,
+    sendMessage,
+    editMessage,
+    sendPhoto,
+    editMessageCaption,
+    answerCallback,
+    stop,
+  };
 }

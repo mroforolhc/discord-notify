@@ -8,6 +8,10 @@ export const config = {
   voiceMinEditIntervalMs: Number(process.env.VOICE_MIN_EDIT_INTERVAL_MS) || 2000,
   inviteMaxAgeSeconds: Number(process.env.INVITE_MAX_AGE_SECONDS) || 21600,
   peopleFile: process.env.PEOPLE_FILE || "data/people.json",
+  adminUserIds: (process.env.ADMIN_USER_IDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   telegramMode: process.env.TELEGRAM_MODE || "polling",
   telegramWebhookUrl: process.env.TELEGRAM_WEBHOOK_URL,
   telegramWebhookSecret: process.env.TELEGRAM_WEBHOOK_SECRET,
