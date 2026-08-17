@@ -52,7 +52,15 @@ export interface TelegramBot {
     caption: string,
     extra?: Record<string, unknown>,
   ) => Promise<unknown>;
-  answerCallback: (callbackQueryId: string, text?: string) => Promise<unknown>;
+  answerCallback: (
+    callbackQueryId: string,
+    text?: string,
+    showAlert?: boolean,
+  ) => Promise<unknown>;
+  deleteMessage: (
+    chat: number | string,
+    messageId: number,
+  ) => Promise<unknown>;
   // Варианты с явным адресатом — чтобы отвечать в тот чат, откуда написали.
   sendMessageTo: (
     chat: number | string,
@@ -214,12 +222,28 @@ export async function startTelegramBot(
     return editMessageCaptionTo(chatId, messageId, caption, extra);
   }
 
-  // Гасит «часики» на нажатой инлайн-кнопке; text — опциональный тост.
-  async function answerCallback(callbackQueryId: string, text?: string) {
+  // Гасит «часики» на нажатой инлайн-кнопке; text — тост, showAlert — модалка.
+  async function answerCallback(
+    callbackQueryId: string,
+    text?: string,
+    showAlert = false,
+  ) {
     try {
-      return await bot.api.answerCallbackQuery(callbackQueryId, { text });
+      return await bot.api.answerCallbackQuery(callbackQueryId, {
+        text,
+        show_alert: showAlert,
+      });
     } catch (error) {
       console.error("Ошибка ответа на callback в Telegram:", error);
+      return null;
+    }
+  }
+
+  async function deleteMessage(chat: number | string, messageId: number) {
+    try {
+      return await bot.api.deleteMessage(chat, messageId);
+    } catch (error) {
+      console.error("Ошибка удаления сообщения в Telegram:", error);
       return null;
     }
   }
@@ -240,6 +264,7 @@ export async function startTelegramBot(
     sendPhoto,
     editMessageCaption,
     answerCallback,
+    deleteMessage,
     sendMessageTo,
     sendPhotoTo,
     editMessageCaptionTo,

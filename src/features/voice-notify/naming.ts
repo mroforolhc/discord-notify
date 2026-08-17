@@ -110,6 +110,7 @@ export function registerNaming({
             callback_data: `name:${id}`,
           },
         ],
+        [{ text: "« Назад к списку", callback_data: "back" }],
       ],
     };
   }
@@ -152,16 +153,22 @@ export function registerNaming({
   });
 
   telegram.emitter.on("callback", async (data, ctx) => {
-    const answer = (text?: string) =>
-      telegram.answerCallback(ctx.callbackQuery.id, text);
+    const answer = (text?: string, alert?: boolean) =>
+      telegram.answerCallback(ctx.callbackQuery.id, text, alert);
     if (!allowed(ctx)) {
-      await answer("Только для админов"); // гасим часики, а не молча игнорим
+      await answer("Вы не админ", true);
       return;
     }
     const cardMessage = ctx.callbackQuery.message;
     const chat = ctx.chat?.id ?? cardMessage?.chat.id; // тот же чат, где карточка
     if (chat == null) {
       await answer();
+      return;
+    }
+
+    if (data === "back") {
+      await answer();
+      if (cardMessage) await telegram.deleteMessage(chat, cardMessage.message_id);
       return;
     }
 
