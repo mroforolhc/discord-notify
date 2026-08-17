@@ -6,11 +6,17 @@ import express from "express";
 import type { Server } from "node:http";
 
 export type MessageContext = Filter<Context, "message">;
+export type ReactionContext = Filter<Context, "message_reaction">;
 
 interface TelegramEvents {
   message: [ctx: MessageContext];
   command: [command: string, ctx: MessageContext];
+  reaction: [ctx: ReactionContext];
 }
+
+// message_reaction по умолчанию НЕ приходит — надо явно запросить (и бот должен
+// быть админом чата). message нужен для chat-stats/команд/voice-notify.
+const ALLOWED_UPDATES = ["message", "message_reaction"] as const;
 
 export interface TelegramEmitter extends EventEmitter {
   on<K extends keyof TelegramEvents>(
@@ -65,6 +71,10 @@ export async function startTelegramBot(
     emitter.emit("command", command, ctx);
   });
 
+  bot.on("message_reaction", (ctx) => {
+    emitter.emit("reaction", ctx);
+  });
+
   bot.catch(({ error }) => {
     console.error("Ошибка Telegram-бота:", error);
   });
@@ -88,11 +98,14 @@ export async function startTelegramBot(
       const s = app.listen(port, () => resolve(s));
     });
 
-    await bot.api.setWebhook(webhookUrl, { secret_token: webhookSecret });
+    await bot.api.setWebhook(webhookUrl, {
+      secret_token: webhookSecret,
+      allowed_updates: [...ALLOWED_UPDATES],
+    });
     console.log(`Telegram: Бот запущен, режим webhook, порт ${port}`);
   } else {
     await bot.api.deleteWebhook();
-    bot.start();
+    bot.start({ allowed_updates: [...ALLOWED_UPDATES] });
     console.log(`Telegram: Бот запущен, режим polling`);
   }
 

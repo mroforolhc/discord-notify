@@ -4,8 +4,8 @@ import type { TelegramBot } from "../../telegram/bot.js";
 import type { Config } from "../../config.js";
 import { openDb } from "./db.js";
 import type { StatsDb } from "./db.js";
-import { messages, messageLinks } from "./schema.js";
-import { mapLiveMessage } from "./mapper.js";
+import { messages, messageLinks, reactionEvents } from "./schema.js";
+import { mapLiveMessage, mapReactionUpdate } from "./mapper.js";
 
 const DAYS = 10;
 
@@ -119,6 +119,22 @@ export function registerChatStats({
       });
     } catch (error) {
       console.error("chat-stats: не удалось записать сообщение:", error);
+    }
+  });
+
+  // Реакции live: кто что поставил/убрал. Требует, чтобы бот был админом чата
+  // и message_reaction был в allowed_updates (см. bot.ts). Пишем синхронно,
+  // идемпотентно (onConflictDoNothing по ux_react_ev на случай передоставки).
+  telegram.emitter.on("reaction", (ctx) => {
+    const u = ctx.messageReaction;
+    if (!u) return;
+    try {
+      const events = mapReactionUpdate(u);
+      if (events.length > 0) {
+        db.insert(reactionEvents).values(events).onConflictDoNothing().run();
+      }
+    } catch (error) {
+      console.error("chat-stats: не удалось записать реакцию:", error);
     }
   });
 

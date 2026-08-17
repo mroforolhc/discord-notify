@@ -1,5 +1,10 @@
-import type { Message, MessageEntity } from "grammy/types";
-import type { NewMessage, NewMessageLink } from "./schema.js";
+import type {
+  Message,
+  MessageEntity,
+  MessageReactionUpdated,
+  ReactionType,
+} from "grammy/types";
+import type { NewMessage, NewMessageLink, NewReactionEvent } from "./schema.js";
 
 export interface MappedMessage {
   message: NewMessage;
@@ -183,4 +188,47 @@ export function mapLiveMessage(msg: Message): MappedMessage {
   };
 
   return { message, links: extractLinks(chatId, messageId, text, entities) };
+}
+
+// ── Реакции (message_reaction): кто что поставил/убрал ───────────────────────
+function reactionKey(r: ReactionType): string {
+  if (r.type === "emoji") return `e:${r.emoji}`;
+  if (r.type === "custom_emoji") return `c:${r.custom_emoji_id}`;
+  return "p:paid";
+}
+
+// Апдейт message_reaction → события add/remove по разнице old_reaction vs new_reaction.
+export function mapReactionUpdate(
+  u: MessageReactionUpdated,
+): NewReactionEvent[] {
+  const oldMap = new Map(u.old_reaction.map((r) => [reactionKey(r), r]));
+  const newMap = new Map(u.new_reaction.map((r) => [reactionKey(r), r]));
+
+  const actorId = u.user?.id ?? u.actor_chat?.id ?? null;
+  const actorPeer = u.user ? "user" : u.actor_chat ? "chat" : null;
+  const actorName = u.user
+    ? [u.user.first_name, u.user.last_name].filter(Boolean).join(" ") ||
+      u.user.username ||
+      null
+    : (u.actor_chat?.title ?? null);
+
+  const make = (r: ReactionType, action: "add" | "remove"): NewReactionEvent => ({
+    chatId: u.chat.id,
+    messageId: u.message_id,
+    actorId,
+    actorName,
+    actorPeer,
+    reactionKind: r.type,
+    emoji: r.type === "emoji" ? r.emoji : null,
+    customEmojiId: r.type === "custom_emoji" ? r.custom_emoji_id : null,
+    emojiKey: reactionKey(r),
+    action,
+    dateUnix: u.date,
+    source: "live",
+  });
+
+  const events: NewReactionEvent[] = [];
+  for (const [k, r] of newMap) if (!oldMap.has(k)) events.push(make(r, "add"));
+  for (const [k, r] of oldMap) if (!newMap.has(k)) events.push(make(r, "remove"));
+  return events;
 }

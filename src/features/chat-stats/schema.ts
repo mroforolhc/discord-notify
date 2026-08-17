@@ -90,6 +90,43 @@ export const messageLinks = sqliteTable(
   ],
 );
 
+// Кто что поставил/убрал — лог событий реакций из live (message_reaction).
+// БЕЗ FK на messages: реакция может прийти на сообщение, которого у нас нет
+// (старое/до старта live) — терять её не хотим.
+export const reactionEvents = sqliteTable(
+  "reaction_events",
+  {
+    pk: integer("pk").primaryKey({ autoIncrement: true }),
+    chatId: integer("chat_id").notNull(),
+    messageId: integer("message_id").notNull(),
+    actorId: integer("actor_id"), // кто поставил/убрал
+    actorName: text("actor_name"),
+    actorPeer: text("actor_peer"), // 'user' | 'chat' (анонимный админ)
+    reactionKind: text("reaction_kind").notNull(), // 'emoji' | 'custom_emoji' | 'paid'
+    emoji: text("emoji"),
+    customEmojiId: text("custom_emoji_id"),
+    emojiKey: text("emoji_key").notNull(), // 'e:❤' | 'c:<id>' | 'p:paid'
+    action: text("action").notNull(), // 'add' | 'remove'
+    dateUnix: integer("date_unix").notNull(),
+    source: text("source").notNull().default("live"),
+  },
+  (t) => [
+    // Дедуп на случай передоставки вебхука.
+    uniqueIndex("ux_react_ev").on(
+      t.chatId,
+      t.messageId,
+      t.actorId,
+      t.emojiKey,
+      t.action,
+      t.dateUnix,
+    ),
+    index("ix_react_ev_actor").on(t.actorId),
+    index("ix_react_ev_msg").on(t.chatId, t.messageId),
+    index("ix_react_ev_date").on(t.dateUnix),
+  ],
+);
+
 export type NewMessage = typeof messages.$inferInsert;
 export type NewReactionTotal = typeof reactionTotals.$inferInsert;
 export type NewMessageLink = typeof messageLinks.$inferInsert;
+export type NewReactionEvent = typeof reactionEvents.$inferInsert;
